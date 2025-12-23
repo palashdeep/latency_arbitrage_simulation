@@ -53,7 +53,7 @@ $$ S_{t}^{(i)} = V_{t-\ell_i} + \eta_t $$
 
 Both traders use the same rational rule:
 
-$$ Trade if \mathbb{E}[\Delta V \mid S_t] > \frac{spread}{2} + impact $$
+$$ Trade \\quad if \mathbb{E}[\Delta V \mid S_t] > \frac{spread}{2} + impact $$
 
 - Speed does not change intelligence
 - Speed changes the information set
