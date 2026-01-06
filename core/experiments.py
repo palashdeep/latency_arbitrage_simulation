@@ -11,17 +11,17 @@ This experiment isolates the economic value of speed by holding everything else 
 import numpy as np
 import pandas as pd
 
-from model import LatentValueModel
-from market import NaiveMarketMaker
-from traders import FastTrader, SlowTrader
+from core.model import LatentValueModel
+from core.market import NaiveMarketMaker
+from core.traders import FastTrader, SlowTrader
 
-def run_single_simulation(T, sigma, spread, base_depth, impact_coeff, slow_latency, seed):
+def run_single_simulation(T, sigma, spread, base_depth, impact_coeff, slow_latency, agg_window, seed):
     """Run one simulation and return final PnLs"""
 
     model = LatentValueModel(T=T, sigma=sigma, seed=seed)
 
     mm = NaiveMarketMaker(
-        lag=1,
+        lag=2,
         spread=spread,
         base_depth=base_depth,
         impact_coeff=impact_coeff,
@@ -31,23 +31,24 @@ def run_single_simulation(T, sigma, spread, base_depth, impact_coeff, slow_laten
     fast = FastTrader(
         name="Fast",
         latency=0,
-        noise_std=0.0,
+        noise_std=0.01,
         base_size=1.0,
         max_inventory=10,
-        prob_threshold=0.0,
-        ev_threshold=0.0,
+        prob_threshold=0.3,
+        ev_threshold=1.0,
         impact_coeff=impact_coeff
     )
 
     slow = SlowTrader(
         name="Slow",
         latency=slow_latency,
-        noise_std=0.0,
+        noise_std=0.02,
         base_size=1.0,
         max_inventory=10,
-        prob_threshold=0.0,
-        ev_threshold=0.0,
-        impact_coeff=impact_coeff
+        prob_threshold=0.5,
+        ev_threshold=1.0,
+        impact_coeff=impact_coeff,
+        agg_window = agg_window
     )
 
     total_variance =  sigma**2
@@ -60,11 +61,11 @@ def run_single_simulation(T, sigma, spread, base_depth, impact_coeff, slow_laten
         slow.observe(model.V, t)
 
         orders = []
-        o_fast = fast.decide_and_order(model.V, t, quote, total_variance)
+        o_fast = fast.decide_and_order(quote, total_variance)
         if o_fast:
             orders.append(o_fast)
 
-        o_slow = slow.decide_and_order(model.V, t, quote, total_variance)
+        o_slow = slow.decide_and_order(quote, total_variance)
         if o_slow:
             orders.append(o_slow)
 
@@ -75,13 +76,15 @@ def run_single_simulation(T, sigma, spread, base_depth, impact_coeff, slow_laten
             o["trader"].apply_fill(o["side"], res["filled"], res["avg_price"])
 
         mm.end_of_timestamp_update(rho=0.1)
+        slow.end_of_timestamp_update(quote)
+        fast.end_of_timestamp_update(quote)
 
     final_price = model.V[-1]
 
     return {
         "Fast_PnL": fast.mark_to_market(final_price),
         "Slow_PnL": slow.mark_to_market(final_price),
-        "MM_PnL": mm.mark_to_market(final_price, T-1),
+        "MM_PnL": mm.mark_to_market(final_price),
     }
 
 def latency_sweep(latencies, n_runs, **sim_kwargs):

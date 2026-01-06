@@ -87,6 +87,6 @@ class NaiveMarketMaker:
         self.depth_bid += rho * (self.base_depth - self.depth_bid)
         self.depth_ask += rho * (self.base_depth - self.depth_ask)
 
-    def mark_to_market(self, V, t):
+    def mark_to_market(self, price):
         """Current PnL = cash + inventory * true value"""
-        return self.cash + self.inventory * V[t]
+        return self.cash + self.inventory * price

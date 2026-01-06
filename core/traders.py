@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.stats as stats
 
 class BaseTrader:
     """
@@ -7,7 +8,7 @@ class BaseTrader:
     - latency
     - signal aggregation logic
     """
-    def __init__(self, name, latency, noise_std, base_size, max_inventory, prob_threshold, ev_threshold, impact_coeff):
+    def __init__(self, name, latency, noise_std, base_size, max_inventory, prob_threshold, ev_threshold, impact_coeff, seed=None):
         self.name = name
         self.latency = latency
         self.noise_std = noise_std
@@ -20,12 +21,14 @@ class BaseTrader:
         self.inventory = 0
         self.cash = 0
 
+        self.rng = np.random.default_rng(seed or 89)
+
         self.signals = []
     
     def observe(self, V, t):
         """Observe delayed noisy signal"""
         idx = max(0, t - self.latency)
-        eps = np.random.normal(0.0, self.noise_std)
+        eps = self.rng.normal(0.0, self.noise_std)
         signal = V[idx] + eps
         self.signals.append(signal)
     
@@ -49,8 +52,8 @@ class BaseTrader:
         sigma = np.sqrt(total_var)
         threshold = spread / 2.0
 
-        z = (abs(score) - threshold) / sigma
-        return float(0.5 * (1 + np.tanh(z)))
+        z = (threshold - abs(score)) / sigma
+        return float(1.0 - stats.norm.cdf(z))
     
     def expected_impact(self, size, depth):
         """Linear impact model"""
@@ -62,7 +65,7 @@ class BaseTrader:
         new_inv = self.inventory + sign * size
         return abs(new_inv) <= self.max_inventory
     
-    def decide_and_order(self, V, t, quote, total_var):
+    def decide_and_order(self, quote, total_var):
         """Decision rule: Trade if EV > threshold"""
         if not self.signals:
             return None
@@ -78,6 +81,9 @@ class BaseTrader:
         size = min(self.base_size, self.max_inventory - abs(self.inventory))
 
         if size <= 0 or not self.inventory_ok(side, size):
+            return None
+        
+        if abs(score) < 1.5 * np.sqrt(total_var):
             return None
         
         prob = self.compute_probability(score, spread, total_var)
@@ -105,6 +111,12 @@ class BaseTrader:
         else:
             self.inventory -= filled
             self.cash += filled * price
+
+    def end_of_timestamp_update(self, quote):
+        """Forces liquidation at mid at the end of each timestep"""
+        price = 0.5 * (quote[0] + quote[1])
+        self.cash += self.inventory * price
+        self.inventory = 0.0
     
     def mark_to_market(self, price):
         """Current PnL = cash + inventory * price"""
